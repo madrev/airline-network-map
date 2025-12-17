@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Airport Route Filter</title>
+  <link rel="stylesheet" href="https://js.arcgis.com/4.29/esri/themes/light/main.css">
+  <style>
+    html, body, #viewDiv { padding: 0; margin: 0; height: 100%; width: 100%; }
+    #filterPanel {
+      position: absolute;
+      top: 15px;
+      right: 15px;
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      z-index: 1;
+    }
+    #iataInput { 
+      padding: 8px; 
+      font-size: 16px; 
+      width: 120px;
+      text-transform: uppercase;
+    }
+    button { 
+      padding: 8px 16px; 
+      margin-left: 8px; 
+      cursor: pointer; 
+    }
+    #status {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <div id="viewDiv"></div>
+  <div id="filterPanel">
+    <label for="iataInput">IATA Code: </label>
+    <input type="text" id="iataInput" placeholder="e.g. JFK" maxlength="4">
+    <button id="applyBtn">Apply</button>
+    <button id="clearBtn">Clear</button>
+    <div id="status">Loading map...</div>
+  </div>
+
+  <script src="https://js.arcgis.com/4.29/"></script>
+  <script>
+    require([
+      "esri/WebMap",
+      "esri/views/MapView",
+      "esri/widgets/Legend"
+    ], function(WebMap, MapView, Legend) {
+
+      // === CONFIGURE THESE ===
+      const WEBMAP_ID = "feb55e974c4643fc9115c8673f7d59a4";  // Replace with your web map ID
+      
+      // Layer titles exactly as they appear in your web map
+      const AIRPORTS_LAYER_TITLE = "airports";
+      const ROUTES_LAYER_TITLE = "routes";
+      
+      // Field names in your data
+      const AIRPORT_CODE_FIELD = "iata";
+      const ROUTE_ORIGIN_FIELD = "origin_iata";
+      // === END CONFIGURATION ===
+
+      const statusEl = document.getElementById('status');
+      
+      // Load the web map
+      const webMap = new WebMap({
+        portalItem: {
+          id: WEBMAP_ID
+        }
+      });
+
+      const view = new MapView({
+        container: "viewDiv",
+        map: webMap
+      });
+
+      // Add Legend widget
+      const legend = new Legend({
+        view: view
+      });
+      view.ui.add(legend, "bottom-right");
+
+      let airportsLayer = null;
+      let routesLayer = null;
+
+      // Wait for map to fully load
+      webMap.when(() => {
+        console.log("Web map loaded. Available layers:");
+        webMap.allLayers.forEach(layer => {
+          console.log(`  - "${layer.title}" (type: ${layer.type})`);
+        });
+
+        // Find layers by title
+        airportsLayer = webMap.allLayers.find(layer => layer.title === AIRPORTS_LAYER_TITLE);
+        routesLayer = webMap.allLayers.find(layer => layer.title === ROUTES_LAYER_TITLE);
+
+        // Check what we found
+        if (!airportsLayer) {
+          console.error(`Could not find layer titled "${AIRPORTS_LAYER_TITLE}"`);
+          statusEl.textContent = `Error: Layer "${AIRPORTS_LAYER_TITLE}" not found`;
+        }
+        if (!routesLayer) {
+          console.error(`Could not find layer titled "${ROUTES_LAYER_TITLE}"`);
+          statusEl.textContent = `Error: Layer "${ROUTES_LAYER_TITLE}" not found`;
+        }
+
+        if (airportsLayer && routesLayer) {
+          statusEl.textContent = "Ready - enter an IATA code";
+          
+          // Check URL for initial filter
+          const urlParams = new URLSearchParams(window.location.search);
+          const initialIATA = urlParams.get('iata');
+          if (initialIATA) {
+            document.getElementById('iataInput').value = initialIATA.toUpperCase();
+            applyFilter(initialIATA);
+          }
+        }
+      }).catch(err => {
+        console.error("Error loading web map:", err);
+        statusEl.textContent = "Error loading map. Check console.";
+      });
+
+      // Function to apply filter to both layers
+      function applyFilter(iataCode) {
+        if (!airportsLayer || !routesLayer) {
+          statusEl.textContent = "Layers not loaded yet";
+          return;
+        }
+
+        if (iataCode && iataCode.trim()) {
+          const code = iataCode.trim().toUpperCase();
+          
+          // Filter airports layer
+          airportsLayer.definitionExpression = `${AIRPORT_CODE_FIELD} = '${code}'`;
+          
+          // Filter routes layer
+          routesLayer.definitionExpression = `${ROUTE_ORIGIN_FIELD} = '${code}'`;
+          
+          // Update URL without reloading page
+          const url = new URL(window.location);
+          url.searchParams.set('iata', code);
+          window.history.pushState({}, '', url);
+          
+          statusEl.textContent = `Filtering: ${code}`;
+          console.log(`Filter applied: ${code}`);
+        }
+      }
+
+      // Function to clear filters
+      function clearFilter() {
+        if (airportsLayer) airportsLayer.definitionExpression = null;
+        if (routesLayer) routesLayer.definitionExpression = null;
+        
+        // Remove param from URL
+        const url = new URL(window.location);
+        url.searchParams.delete('iata');
+        window.history.pushState({}, '', url);
+        
+        document.getElementById('iataInput').value = '';
+        statusEl.textContent = "Filters cleared";
+        console.log('Filters cleared');
+      }
+
+      // Wire up UI
+      document.getElementById('applyBtn').addEventListener('click', () => {
+        applyFilter(document.getElementById('iataInput').value);
+      });
+
+      document.getElementById('clearBtn').addEventListener('click', clearFilter);
+
+      // Apply on Enter key
+      document.getElementById('iataInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          applyFilter(e.target.value);
+        }
+      });
+
+    });
+  </script>
+</body>
+</html>
